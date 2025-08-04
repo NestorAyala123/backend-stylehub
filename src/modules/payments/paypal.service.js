@@ -399,7 +399,7 @@ class PayPalService {
             },
             transaction_id: `TXN_${Date.now()}_${Math.random()
               .toString(36)
-              .substr(2, 9)}`,
+              .substring(2, 11)}`,
           });
         }
       }, 1000); // Simular latencia de red

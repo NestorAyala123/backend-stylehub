@@ -4,9 +4,6 @@ import paypalService from './paypal.service.js';
 import {
   validatePaymentIntent,
   validateConfirmPayment,
-  validatePayPalPayment,
-  validatePayPalFromCart,
-  validateCheckoutSession,
 } from './payments.validation.js';
 import logger from '../../config/logger.js';
 

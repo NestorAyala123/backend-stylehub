@@ -137,10 +137,6 @@ export const validateProductUpdate = (data) => {
       'boolean.base': 'El campo destacado debe ser verdadero o falso',
     }),
 
-    is_active: Joi.boolean().optional().messages({
-      'boolean.base': 'El campo activo debe ser verdadero o falso',
-    }),
-
     tags: Joi.alternatives()
       .try(
         Joi.array().items(Joi.string().max(50)).max(10),

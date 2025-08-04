@@ -406,16 +406,9 @@ class PayPalService {
     });
   }
 
-  async createRefund(transactionId, amount, reason) {
+  async createRefund(amount, reason) {
     try {
       // Estructura para reembolso real en PayPal
-      const refundData = {
-        amount: {
-          currency_code: 'USD',
-          value: amount.toString(),
-        },
-        note_to_payer: reason || 'Refund processed',
-      };
 
       // Aquí iría la llamada real a PayPal API
       // const response = await paypalClient.payments.captures.refund(transactionId, refundData);
@@ -461,7 +454,7 @@ class PayPalService {
   }
 
   // Webhook handler para PayPal (estructura preparada)
-  async handleWebhook(body, headers) {
+  async handleWebhook(body) {
     try {
       // Aquí iría la verificación del webhook de PayPal
       // const isValid = await this.verifyPayPalWebhook(body, headers);

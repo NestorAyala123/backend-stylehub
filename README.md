@@ -1,8 +1,37 @@
-# Backend E-commerce - Monolito Modular
+# StyleHub Backend - E-commerce API con Patrones de Diseño
 
 ## Descripción
 
-Backend robusto y escalable para plataforma de e-commerce, construido con Node.js + Express siguiendo una arquitectura de monolito modular por dominios.
+Backend robusto y escalable para plataforma de e-commerce, construido con Node.js + Express siguiendo una arquitectura de monolito modular por dominios. **Ahora integrado con 4 patrones de diseño fundamentales** para mayor mantenibilidad, escalabilidad y flexibilidad.
+
+## 🎨 Patrones de Diseño Integrados
+
+### ✅ **Singleton Pattern** - Configuración Global
+
+- Estado único compartido en toda la aplicación
+- Configuración centralizada (BD, negocio, pagos)
+- Cache global persistente
+
+### ✅ **Factory Method Pattern** - Creación de Productos
+
+- Creación flexible de productos por categoría
+- Soporte para: clothing, electronics, books
+- Extensible para nuevos tipos
+- Cálculo automático de impuestos por tipo
+
+### ✅ **Repository Pattern** - Abstracción de Datos
+
+- Interfaz única para acceso a datos
+- Soporte para Supabase y memoria (testing)
+- CRUD estandarizado y reutilizable
+- Fácil cambio entre fuentes de datos
+
+### ✅ **Strategy Pattern** - Algoritmos Intercambiables
+
+- **Pagos**: Credit Card, PayPal, Bank Transfer
+- **Descuentos**: Porcentaje, Monto fijo, BOGO
+- Fácil agregar nuevos métodos/estrategias
+- Validación automática por estrategia
 
 ## Características Principales
 

@@ -9,6 +9,10 @@
     "start": "node src/server.js",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:patterns": "jest src/shared/patterns/tests/",
+    "verify:patterns": "node verify-patterns.js",
+    "verify:email-integration": "node verify-email-integration.js",
+    "demo:patterns": "node src/shared/patterns/demo.js",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix"
   },

@@ -2,6 +2,8 @@ import { supabaseAdmin } from '../../config/supabase.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import EmailService from '../../shared/services/EmailService.js';
+import EmailVerificationRepository from './repository/emailverification.repository.js';
 
 class AuthService {
   constructor() {
@@ -96,11 +98,47 @@ class AuthService {
 
       console.log('✅ Usuario creado exitosamente:', insertedUser.id);
 
-      // Crear token de sesión
-      const sessionToken = this.generateSessionToken(insertedUser);
+      // ⭐ CREAR CÓDIGO DE VERIFICACIÓN USANDO EL REPOSITORIO
+      try {
+        console.log('🔐 Generando código de verificación...');
+        const verificationResult =
+          await EmailVerificationRepository.createVerificationCode(
+            insertedUser.id,
+            insertedUser.email,
+            'account_verification'
+          );
 
-      console.log('✅ Token de sesión generado');
+        console.log('✅ Código de verificación creado:', {
+          code: verificationResult.code,
+          expiresIn: verificationResult.expires_in_minutes + ' minutos',
+        });
 
+        // ⭐ ENVIAR EMAIL CON CÓDIGO DE VERIFICACIÓN
+        try {
+          console.log('📧 Enviando email de verificación...');
+          await EmailService.sendVerificationCode(
+            insertedUser.email,
+            verificationResult.code,
+            insertedUser.full_name
+          );
+          console.log('✅ Email de verificación enviado exitosamente');
+        } catch (emailError) {
+          console.error(
+            '❌ Error enviando email de verificación:',
+            emailError.message
+          );
+          // No fallar el registro por error de email, el usuario puede solicitar reenvío
+        }
+      } catch (verificationError) {
+        console.error(
+          '❌ Error creando código de verificación:',
+          verificationError.message
+        );
+        // No fallar el registro por esto, el usuario puede solicitar un reenvío
+      }
+
+      // ⭐ NO CREAR SESIÓN HASTA QUE EL EMAIL ESTÉ VERIFICADO
+      // En lugar de crear una sesión, devolver información básica del usuario
       return {
         user: {
           id: insertedUser.id,
@@ -112,16 +150,8 @@ class AuthService {
           },
           email_confirmed_at: null,
         },
-        session: {
-          access_token: sessionToken,
-          token_type: 'bearer',
-          expires_in: 86400, // 24 horas
-          expires_at: Math.floor(Date.now() / 1000) + 86400,
-          user: {
-            id: insertedUser.id,
-            email: insertedUser.email,
-          },
-        },
+        // No incluir session para forzar verificación de email
+        session: null,
         profile: {
           id: insertedUser.id,
           email: insertedUser.email,
@@ -133,6 +163,9 @@ class AuthService {
           email_verified: insertedUser.email_verified,
           created_at: insertedUser.created_at,
         },
+        message:
+          'Usuario registrado exitosamente. Por favor, verifica tu email para activar tu cuenta.',
+        requiresVerification: true,
       };
     } catch (error) {
       console.error('❌ ERROR EN REGISTRO:', error.message);
@@ -166,7 +199,17 @@ class AuthService {
         throw new Error('Credenciales inválidas');
       }
 
-      console.log('✅ Contraseña válida, login exitoso');
+      console.log('✅ Contraseña válida, verificando estado del email...');
+
+      // ⭐ VERIFICAR SI EL EMAIL ESTÁ CONFIRMADO
+      if (!usuario.email_verified) {
+        console.log('❌ Email no verificado para usuario:', usuario.id);
+        throw new Error(
+          'Debes verificar tu email antes de poder iniciar sesión. Revisa tu bandeja de entrada y haz clic en el enlace de verificación.'
+        );
+      }
+
+      console.log('✅ Email verificado, login exitoso');
 
       // Actualizar último login
       try {
@@ -448,35 +491,97 @@ class AuthService {
     }
   }
 
-  async verifyEmail(token) {
+  async verifyEmail({ email, code }) {
     try {
-      console.log('Verificación de email solicitada con token:', token);
+      console.log(
+        'Verificación de email solicitada para email:',
+        email,
+        'con código:',
+        code
+      );
 
+      // ⭐ VERIFICAR CÓDIGO USANDO EL REPOSITORIO
+      const verificationResult = await EmailVerificationRepository.verifyCode(
+        email.toLowerCase().trim(),
+        code,
+        'account_verification'
+      );
+
+      if (!verificationResult.valid) {
+        console.error(
+          '❌ Código de verificación inválido:',
+          verificationResult.error
+        );
+        throw new Error(verificationResult.error);
+      }
+
+      console.log('✅ Código verificado exitosamente');
+
+      // Buscar usuario para crear la sesión
       const { data: usuario, error: userError } = await supabaseAdmin
         .from('usuarios')
-        .select('id')
-        .eq('email_verification_token', token)
+        .select('*')
+        .eq('email', email.toLowerCase().trim())
         .single();
 
       if (userError || !usuario) {
-        throw new Error('Token de verificación inválido');
+        console.error('❌ Usuario no encontrado:', userError?.message);
+        throw new Error('Usuario no encontrado');
       }
 
+      console.log('✅ Usuario encontrado para verificación:', usuario.id);
+
+      // Actualizar el estado de verificación del usuario
       const { error: updateError } = await supabaseAdmin
         .from('usuarios')
         .update({
           email_verified: true,
-          email_verification_token: null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', usuario.id);
 
       if (updateError) {
+        console.error('❌ Error actualizando verificación:', updateError);
         throw new Error('Error verificando email');
       }
 
-      return { success: true };
+      // ⭐ CREAR SESIÓN DESPUÉS DE VERIFICAR EL EMAIL
+      const sessionToken = this.generateSessionToken(usuario);
+
+      // Remover la contraseña del usuario antes de retornar
+      const { password: _, ...userWithoutPassword } = usuario;
+
+      console.log('✅ Email verificado exitosamente y sesión creada');
+
+      return {
+        user: {
+          id: usuario.id,
+          email: usuario.email,
+          user_metadata: {
+            full_name: usuario.full_name,
+            phone: usuario.phone,
+            rol: usuario.rol,
+          },
+          email_confirmed_at: new Date().toISOString(),
+        },
+        session: {
+          access_token: sessionToken,
+          token_type: 'bearer',
+          expires_in: 86400,
+          expires_at: Math.floor(Date.now() / 1000) + 86400,
+          user: {
+            id: usuario.id,
+            email: usuario.email,
+          },
+        },
+        profile: {
+          ...userWithoutPassword,
+          email_verified: true,
+        },
+        message: 'Email verificado exitosamente',
+      };
     } catch (error) {
+      console.error('❌ ERROR EN VERIFICACIÓN DE EMAIL:', error.message);
       throw new Error(error.message || 'Error verificando email');
     }
   }
@@ -487,7 +592,7 @@ class AuthService {
 
       const { data: usuario, error: userError } = await supabaseAdmin
         .from('usuarios')
-        .select('id, email_verified')
+        .select('id, email_verified, full_name')
         .eq('email', email.toLowerCase().trim())
         .single();
 
@@ -499,21 +604,123 @@ class AuthService {
         throw new Error('El email ya está verificado');
       }
 
-      const verificationToken = crypto.randomBytes(32).toString('hex');
+      // ⭐ USAR REPOSITORIO PARA CREAR CÓDIGO DE VERIFICACIÓN
+      const verificationResult =
+        await EmailVerificationRepository.createVerificationCode(
+          usuario.id,
+          email.toLowerCase().trim(),
+          'account_verification'
+        );
 
-      await supabaseAdmin
-        .from('usuarios')
-        .update({
-          email_verification_token: verificationToken,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', usuario.id);
+      console.log('Código de verificación generado:', verificationResult.code);
 
-      console.log('Token de verificación generado:', verificationToken);
+      // ⭐ ENVIAR EMAIL CON CÓDIGO DE VERIFICACIÓN
+      try {
+        console.log('📧 Enviando email de verificación...');
+        await EmailService.sendVerificationCode(
+          email,
+          verificationResult.code,
+          usuario.full_name
+        );
+        console.log('✅ Email de verificación enviado exitosamente');
+      } catch (emailError) {
+        console.error(
+          '❌ Error enviando email de verificación:',
+          emailError.message
+        );
+        // No fallar la operación por error de email
+      }
 
       return { success: true };
     } catch (error) {
       throw new Error(error.message || 'Error reenviando verificación');
+    }
+  }
+
+  async resendVerificationCode(email) {
+    try {
+      console.log('=== REENVÍO DE CÓDIGO DE VERIFICACIÓN ===');
+      console.log('Email:', email);
+
+      const { data: usuario, error: userError } = await supabaseAdmin
+        .from('usuarios')
+        .select('id, email_verified, full_name')
+        .eq('email', email.toLowerCase().trim())
+        .eq('is_active', true)
+        .single();
+
+      if (userError || !usuario) {
+        console.log('❌ Usuario no encontrado para reenvío:', email);
+        // Por seguridad, devolvemos success aunque no exista el usuario
+        return {
+          success: true,
+          message: 'Si el email existe, recibirás un código de verificación',
+        };
+      }
+
+      if (usuario.email_verified) {
+        throw new Error('El email ya está verificado');
+      }
+
+      // ⭐ VERIFICAR SI HAY CÓDIGOS RECIENTES PARA EVITAR SPAM
+      const hasRecentCode =
+        await EmailVerificationRepository.hasRecentActiveCode(
+          email.toLowerCase().trim(),
+          'account_verification',
+          2 // 2 minutos de cooldown
+        );
+
+      if (hasRecentCode) {
+        throw new Error(
+          'Ya se envió un código recientemente. Espera 2 minutos antes de solicitar otro.'
+        );
+      }
+
+      // ⭐ INVALIDAR CÓDIGOS ANTERIORES
+      await EmailVerificationRepository.invalidatePreviousCodes(
+        usuario.id,
+        'account_verification'
+      );
+
+      // ⭐ CREAR NUEVO CÓDIGO DE VERIFICACIÓN
+      const verificationResult =
+        await EmailVerificationRepository.createVerificationCode(
+          usuario.id,
+          email.toLowerCase().trim(),
+          'account_verification'
+        );
+
+      console.log('✅ Nuevo código de verificación generado:', {
+        code: verificationResult.code,
+        expiresIn: verificationResult.expires_in_minutes + ' minutos',
+      });
+
+      // ⭐ ENVIAR EMAIL CON NUEVO CÓDIGO DE VERIFICACIÓN
+      try {
+        console.log('📧 Reenviando email de verificación...');
+        await EmailService.sendVerificationCode(
+          email,
+          verificationResult.code,
+          usuario.full_name
+        );
+        console.log('✅ Email de verificación reenviado exitosamente');
+      } catch (emailError) {
+        console.error(
+          '❌ Error reenviando email de verificación:',
+          emailError.message
+        );
+        // No fallar la operación por error de email
+      }
+
+      return {
+        success: true,
+        message: 'Código de verificación enviado exitosamente',
+      };
+    } catch (error) {
+      console.error('❌ ERROR EN REENVÍO DE VERIFICACIÓN:', error.message);
+      throw new Error(
+        error.message || 'Error reenviando código de verificación'
+      );
     }
   }
 

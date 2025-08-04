@@ -13,7 +13,7 @@ cloudinary.config({
 const productStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'ecommerce/products',
+    folder: 'styleshop/products',
     allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
     transformation: [
       { width: 800, height: 800, crop: 'limit', quality: 'auto' },
@@ -26,7 +26,7 @@ const productStorage = new CloudinaryStorage({
 const avatarStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'ecommerce/avatars',
+    folder: 'styleshop/avatars',
     allowed_formats: ['jpg', 'jpeg', 'png'],
     transformation: [
       {

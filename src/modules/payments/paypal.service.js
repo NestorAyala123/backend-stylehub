@@ -399,16 +399,23 @@ class PayPalService {
             },
             transaction_id: `TXN_${Date.now()}_${Math.random()
               .toString(36)
-              .substring(2, 11)}`,
+              .substr(2, 9)}`,
           });
         }
       }, 1000); // Simular latencia de red
     });
   }
 
-  async createRefund(amount, reason) {
+  async createRefund(transactionId, amount, reason) {
     try {
       // Estructura para reembolso real en PayPal
+      const refundData = {
+        amount: {
+          currency_code: 'USD',
+          value: amount.toString(),
+        },
+        note_to_payer: reason || 'Refund processed',
+      };
 
       // Aquí iría la llamada real a PayPal API
       // const response = await paypalClient.payments.captures.refund(transactionId, refundData);
@@ -454,7 +461,7 @@ class PayPalService {
   }
 
   // Webhook handler para PayPal (estructura preparada)
-  async handleWebhook(body) {
+  async handleWebhook(body, headers) {
     try {
       // Aquí iría la verificación del webhook de PayPal
       // const isValid = await this.verifyPayPalWebhook(body, headers);

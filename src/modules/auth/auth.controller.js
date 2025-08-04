@@ -356,24 +356,68 @@ class AuthController {
 
   async verifyEmail(req, res) {
     try {
-      await authService.verifyEmail(req.body.token);
+      console.log('🎯 Controller verifyEmail - req.body:', req.body);
+
+      // Validar datos de entrada
+      const { email, code } = req.body;
+
+      console.log('📧 Email extraído:', email);
+      console.log('🔑 Code extraído:', code);
+
+      if (!email || !code) {
+        return res.status(400).json({
+          error: 'Email y código son requeridos',
+          details: 'Faltan campos obligatorios',
+        });
+      }
+
+      if (code.length !== 6) {
+        return res.status(400).json({
+          error: 'Código de verificación inválido',
+          details: 'El código debe tener 6 dígitos',
+        });
+      }
+
+      // Verificar email
+      console.log('📤 Enviando al servicio:', { email, code });
+      const result = await authService.verifyEmail({ email, code });
+      console.log('📥 Resultado del servicio:', result);
 
       logger.info('Email verificado exitosamente', {
+        userId: result.user?.id,
+        email: result.user?.email,
         ip: req.ip,
       });
 
       res.json({
         success: true,
-        message: 'Email verificado exitosamente',
+        message: result.message,
+        user: result.user,
+        session: result.session,
+        profile: result.profile,
       });
     } catch (error) {
-      logger.error('Error verificando email', {
+      logger.warn('Error en verificación de email', {
         error: error.message,
+        email: req.body?.email,
         ip: req.ip,
       });
 
-      res.status(400).json({
-        error: 'Token de verificación inválido o expirado',
+      let statusCode = 400;
+      let errorMessage = 'Error en verificación de email';
+
+      if (
+        error.message.includes('inválido') ||
+        error.message.includes('expirado')
+      ) {
+        errorMessage = 'Código de verificación inválido o expirado';
+      } else if (error.message.includes('no encontrado')) {
+        errorMessage = 'Usuario no encontrado';
+        statusCode = 404;
+      }
+
+      res.status(statusCode).json({
+        error: errorMessage,
         details: error.message,
       });
     }
@@ -406,7 +450,65 @@ class AuthController {
     }
   }
 
-  // Nuevo método para actualizar rol de usuario (solo admin)
+  async resendVerificationCode(req, res) {
+    try {
+      console.log('🎯 Controller resendVerificationCode - req.body:', req.body);
+
+      // Validar datos de entrada
+      const { email } = req.body;
+
+      console.log('📧 Email extraído para reenvío:', email);
+
+      if (!email) {
+        return res.status(400).json({
+          error: 'Email es requerido',
+          details: 'Campo email faltante',
+        });
+      }
+
+      // Reenviar código
+      console.log('📤 Reenviando código para email:', email);
+      const result = await authService.resendVerificationCode(email);
+      console.log('📥 Resultado del reenvío:', result);
+
+      logger.info('Código de verificación reenviado', {
+        email: email,
+        ip: req.ip,
+      });
+
+      res.json({
+        success: true,
+        message: result.message,
+        expires_in_minutes: result.expires_in_minutes,
+      });
+    } catch (error) {
+      logger.warn('Error reenviando código de verificación', {
+        error: error.message,
+        email: req.body?.email,
+        ip: req.ip,
+      });
+
+      let statusCode = 400;
+      let errorMessage = 'Error enviando código de verificación';
+
+      if (error.message.includes('no existe')) {
+        errorMessage = 'No existe una cuenta con este email';
+        statusCode = 404;
+      } else if (error.message.includes('ya está verificada')) {
+        errorMessage = 'Esta cuenta ya está verificada';
+        statusCode = 409;
+      } else if (error.message.includes('recientemente')) {
+        errorMessage =
+          'Ya se envió un código recientemente. Espera antes de solicitar otro.';
+        statusCode = 429;
+      }
+
+      res.status(statusCode).json({
+        error: errorMessage,
+        details: error.message,
+      });
+    }
+  }
   async updateUserRole(req, res) {
     try {
       const { userId, newRole } = req.body;
